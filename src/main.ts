@@ -11,40 +11,35 @@ type Endpoint<T> = {
 };
 
 interface Config<T> {
-  baseHref: string;
+  base: string;
   endpoints: Endpoint<T>;
 }
 
 type FastClient<T> = {
-  [key in keyof T]: () => void;
+  [key in keyof T]: () => Promise<Response>;
 };
 
+function makeRequest<T>() {}
+
 function createFastClient<T>(config: Config<T>) {
-  const api: Partial<FastClient<T>> = {};
+  const client: Partial<FastClient<T>> = {};
 
   for (let endpoint in config.endpoints) {
     const info = config.endpoints[endpoint];
+    const url = new URL(info.href, config.base);
 
     if (info.method === 'GET') {
-      api[endpoint] = () => {
-        console.log('INFO: called GET on ' + endpoint);
-      };
     } else if (info.method === 'POST') {
-      api[endpoint] = () => {
-        console.log('INFO: called POST on ' + endpoint);
-      };
     } else if (info.method === 'DELETE') {
-      api[endpoint] = () => {
-        console.log('INFO: called DELETE on ' + endpoint);
-      };
     } else if (info.method === 'PUT') {
-      api[endpoint] = () => {
-        console.log('INFO: called PUT on ' + endpoint);
-      };
     }
+
+    client[endpoint] = () => {
+      return fetch(url, { method: info.method });
+    };
   }
 
-  return api as FastClient<T>;
+  return client as FastClient<T>;
 }
 
 export { createFastClient };
