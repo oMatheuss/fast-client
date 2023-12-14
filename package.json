@@ -1,10 +1,10 @@
 {
   "name": "fast-client",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "Quickly create a client for an api",
-  "main": "main.ts",
+  "main": "src/main.ts",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "rollup -c"
   },
   "keywords": [
     "fast",
@@ -12,5 +12,13 @@
     "api"
   ],
   "author": "Matheus SM",
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "@rollup/plugin-terser": "^0.4.4",
+    "@rollup/plugin-typescript": "^11.1.5",
+    "prettier": "3.1.1",
+    "rollup": "^4.9.0",
+    "tslib": "^2.6.2",
+    "typescript": "^5.3.3"
+  }
 }
