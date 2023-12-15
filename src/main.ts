@@ -1,8 +1,8 @@
 const httpMethods = ['GET', 'POST', 'PUT', 'DELETE'] as const;
-type HttpMethods = typeof httpMethods;
+type HttpMethods = (typeof httpMethods)[number];
 
 interface EndpointInfo {
-  method: HttpMethods[number];
+  method: HttpMethods;
   href: string;
 }
 
@@ -13,33 +13,48 @@ type Endpoint<T> = {
 interface Config<T> {
   base: string;
   endpoints: Endpoint<T>;
+  middleware?: (
+    req: Request,
+    next: (req: Request) => Promise<Response>
+  ) => Promise<Response>;
+  fetcher?: (request: Request) => Promise<Response>;
 }
 
-type FastClient<T> = {
-  [key in keyof T]: () => Promise<Response>;
+type FastClient<T, U extends Config<T>> = {
+  [K in keyof U['endpoints']]: () => Promise<Response>;
 };
 
-function makeRequest<T>() {}
-
 function createFastClient<T>(config: Config<T>) {
-  const client: Partial<FastClient<T>> = {};
+  if (
+    !config.fetcher &&
+    typeof fetch === 'undefined' &&
+    typeof window === 'undefined'
+  ) {
+    throw Error('ERROR: no fetcher available');
+  }
+
+  const _fetch = config.fetcher ?? fetch ?? window.fetch;
+
+  const client: Partial<FastClient<T, typeof config>> = {};
 
   for (let endpoint in config.endpoints) {
     const info = config.endpoints[endpoint];
     const url = new URL(info.href, config.base);
-
-    if (info.method === 'GET') {
-    } else if (info.method === 'POST') {
-    } else if (info.method === 'DELETE') {
-    } else if (info.method === 'PUT') {
+    if (typeof config.middleware !== 'undefined') {
+      const _middleware = config.middleware;
+      client[endpoint] = () => {
+        const request = new Request(url, { method: info.method });
+        return _middleware(request, _fetch);
+      };
+    } else {
+      client[endpoint] = () => {
+        const request = new Request(url, { method: info.method });
+        return _fetch(request);
+      };
     }
-
-    client[endpoint] = () => {
-      return fetch(url, { method: info.method });
-    };
   }
 
-  return client as FastClient<T>;
+  return client as FastClient<T, typeof config>;
 }
 
 export { createFastClient };

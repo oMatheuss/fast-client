@@ -16,6 +16,10 @@ let client = createFastClient({
       method: 'GET',
     },
   },
+  middleware(req, next) {
+    req.headers.append('X-Application-Key', 'ABC123');
+    return next(req);
+  },
 });
 
 client.manga();
