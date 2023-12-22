@@ -1,18 +1,17 @@
-const httpMethods = ['GET', 'POST', 'PUT', 'DELETE'] as const;
-type HttpMethods = (typeof httpMethods)[number];
+type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
 interface EndpointInfo {
-  method: HttpMethods;
+  method: HttpMethod;
   href: string;
 }
 
-type Endpoint<T> = {
-  [key in keyof T]: EndpointInfo;
+type Endpoints<T> = {
+  [K in keyof T]: EndpointInfo; // need types <'GET'>, <'POST'> ...
 };
 
 interface Config<T> {
   base: string;
-  endpoints: Endpoint<T>;
+  endpoints: Endpoints<T>;
   middleware?: (
     req: Request,
     next: (req: Request) => Promise<Response>
@@ -21,10 +20,10 @@ interface Config<T> {
 }
 
 type FastClient<T, U extends Config<T>> = {
-  [K in keyof U['endpoints']]: () => Promise<Response>;
+  [K in keyof U['endpoints']]: (args: U['endpoints'][K]) => Promise<Response>;
 };
 
-function createFastClient<T>(config: Config<T>) {
+function createFastClient<T>(config: Config<T>): FastClient<T, typeof config> {
   if (
     !config.fetcher &&
     typeof fetch === 'undefined' &&
