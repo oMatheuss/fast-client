@@ -2,9 +2,18 @@
   "name": "fast-client",
   "version": "0.0.1",
   "description": "Quickly create a client for an api",
-  "main": "src/main.ts",
+  "main": "output/index.cjs.js",
+  "module": "output/index.esm.js",
+  "types": "output/types/main.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/oMatheuss/fast-client.git"
+  },
   "scripts": {
-    "build": "rollup -c"
+    "clean": "rm -rf output",
+    "build": "npm run clean && rollup -c",
+    "prepublish": "npm run build && npm run bump-version",
+    "publish": "npm publish --access public"
   },
   "keywords": [
     "fast",
@@ -15,10 +24,13 @@
   "license": "MIT",
   "devDependencies": {
     "@rollup/plugin-terser": "^0.4.4",
-    "@rollup/plugin-typescript": "^11.1.5",
     "prettier": "3.1.1",
     "rollup": "^4.9.0",
+    "rollup-plugin-typescript2": "^0.36.0",
     "tslib": "^2.6.2",
     "typescript": "^5.3.3"
-  }
+  },
+  "files": [
+    "output"
+  ]
 }
