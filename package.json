@@ -1,10 +1,10 @@
 {
   "name": "fast-client",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Quickly create a client for an api",
   "main": "output/index.cjs.js",
   "module": "output/index.esm.js",
-  "types": "output/types/main.d.ts",
+  "types": "output/main.d.ts",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/oMatheuss/fast-client.git"
@@ -12,7 +12,6 @@
   "scripts": {
     "clean": "rm -rf output",
     "build": "npm run clean && rollup -c",
-    "prepublish": "npm run build && npm run bump-version",
     "publish": "npm publish --access public"
   },
   "keywords": [
