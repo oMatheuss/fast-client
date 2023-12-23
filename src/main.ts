@@ -1,59 +1,138 @@
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
-interface EndpointInfo {
-  method: HttpMethod;
+interface EndpointInfo<M extends HttpMethod> {
+  readonly method: M;
   href: string;
 }
 
-type Endpoints<T> = {
-  [K in keyof T]: EndpointInfo; // need types <'GET'>, <'POST'> ...
+type EndpointsWithoutTypes = {
+  [K: string]: EndpointInfo<HttpMethod>;
 };
 
-interface Config<T> {
+type Endpoints<T> = {
+  [K in keyof T]: T[K] extends EndpointInfo<infer M> ? EndpointInfo<M> : never;
+};
+
+type MethodParams = {
+  GET: { query: Record<string, string> };
+  POST: { body: any; contentType?: string };
+  PUT: { body: any; contentType?: string };
+  DELETE: { query: Record<string, string> };
+};
+
+interface Config<T extends EndpointsWithoutTypes> {
+  /***
+   * the base URL of the API
+   */
   base: string;
-  endpoints: Endpoints<T>;
+
+  /***
+   * endpoints to be called later
+   */
+  endpoints: T;
+
+  /***
+   * middleware serves as a request and response interceptor
+   */
   middleware?: (
     req: Request,
     next: (req: Request) => Promise<Response>
   ) => Promise<Response>;
+
+  /***
+   * the handler that will make the http requests
+   */
   fetcher?: (request: Request) => Promise<Response>;
 }
 
-type FastClient<T, U extends Config<T>> = {
-  [K in keyof U['endpoints']]: (args: U['endpoints'][K]) => Promise<Response>;
+type FastClient<T> = {
+  [K in keyof T]: (
+    args?: MethodParams[Endpoints<T>[K]['method']]
+  ) => Promise<Response>;
 };
 
-function createFastClient<T>(config: Config<T>): FastClient<T, typeof config> {
-  if (
-    !config.fetcher &&
-    typeof fetch === 'undefined' &&
-    typeof window === 'undefined'
-  ) {
-    throw Error('ERROR: no fetcher available');
-  }
+function ensureGetFetch(config: Config<any>) {
+  if (config.fetcher) return config.fetcher;
+  else if (typeof fetch !== 'undefined') return fetch;
+  else if (typeof window !== 'undefined') return window.fetch;
+  else throw Error('ERROR: no fetcher available');
+}
 
-  const _fetch = config.fetcher ?? fetch ?? window.fetch;
+function isGetRequest(
+  info: EndpointInfo<HttpMethod>
+): info is EndpointInfo<'GET'> {
+  return info.method === 'GET';
+}
 
-  const client: Partial<FastClient<T, typeof config>> = {};
+function isDeleteRequest(
+  info: EndpointInfo<HttpMethod>
+): info is EndpointInfo<'DELETE'> {
+  return info.method === 'DELETE';
+}
 
-  for (let endpoint in config.endpoints) {
-    const info = config.endpoints[endpoint];
+function isPostRequest(
+  info: EndpointInfo<HttpMethod>
+): info is EndpointInfo<'POST'> {
+  return info.method === 'POST';
+}
+
+function isPutRequest(
+  info: EndpointInfo<HttpMethod>
+): info is EndpointInfo<'PUT'> {
+  return info.method === 'PUT';
+}
+
+function createFastClient<T extends EndpointsWithoutTypes>(config: Config<T>) {
+  const _fetch = ensureGetFetch(config);
+  const endpoints = config.endpoints as unknown as Endpoints<T>;
+
+  type CreatedFastClient = FastClient<typeof endpoints>;
+
+  const client: Partial<CreatedFastClient> = {};
+
+  for (const endpoint in endpoints) {
+    const info = endpoints[endpoint];
     const url = new URL(info.href, config.base);
-    if (typeof config.middleware !== 'undefined') {
-      const _middleware = config.middleware;
-      client[endpoint] = () => {
-        const request = new Request(url, { method: info.method });
+
+    type FnArgs = MethodParams[(typeof info)['method']];
+
+    client[endpoint] = (args?: FnArgs) => {
+      let request: Request;
+
+      if (isGetRequest(info) || isDeleteRequest(info)) {
+        const _args = args as MethodParams[typeof info.method];
+        for (const arg in _args.query) {
+          url.searchParams.append(arg, _args.query[arg]);
+        }
+
+        request = new Request(url, { method: info.method });
+      } else if (isPostRequest(info) || isPutRequest(info)) {
+        const _args = args as MethodParams[typeof info.method];
+
+        const headers = new Headers();
+        if (_args.contentType)
+          headers.append('Content-Type', _args.contentType);
+        else headers.append('Content-Type', 'application/json');
+
+        request = new Request(url, {
+          method: info.method,
+          body: _args.body,
+          headers,
+        });
+      } else {
+        throw new Error('Method not implemented');
+      }
+
+      if (typeof config.middleware !== 'undefined') {
+        const _middleware = config.middleware;
         return _middleware(request, _fetch);
-      };
-    } else {
-      client[endpoint] = () => {
-        const request = new Request(url, { method: info.method });
-        return _fetch(request);
-      };
-    }
+      }
+
+      return _fetch(request);
+    };
   }
 
-  return client as FastClient<T, typeof config>;
+  return client as CreatedFastClient;
 }
 
 export { createFastClient };

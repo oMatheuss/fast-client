@@ -8,12 +8,16 @@ The library behaves in a way that allows you to define all calls in one place, i
 Let's assume you have an API with the endpoint `/api/manga`. Now you want to have a method that makes the call on this endpoint. All you need to do is:
 
 ```ts
-let client = createFastClient({
-  base: 'https://localhost:3000/api',
+const client = createFastClient({
+  base: 'https://api.mangadex.org',
   endpoints: {
-    manga: {
-      href: '/manga',
+    getMangas: {
       method: 'GET',
+      href: '/manga',
+    },
+    postManga: {
+      method: 'POST',
+      href: '/manga',
     },
   },
   middleware(req, next) {
@@ -22,7 +26,14 @@ let client = createFastClient({
   },
 });
 
-client.manga();
+const r1 = client.getMangas({
+  query: { title: 'One Piece', limit: '10' },
+});
+
+const r2 = client.postManga({
+  body: JSON.stringify({ title: 'One Piece', author: 'Oda Eiichiro' }),
+  contentType: 'application/json', // default
+});
 ```
 
 It sure seems verbose, but as your project grows, having all the calls well defined and organized will give you the full benefit of it.
