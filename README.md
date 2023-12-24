@@ -9,31 +9,68 @@ Let's assume you have an API with the endpoint `/api/manga`. Now you want to hav
 
 ```ts
 const client = createFastClient({
-  base: 'https://api.mangadex.org',
+  base: 'https://api.example.com',
   endpoints: {
-    getMangas: {
+    search: {
       method: 'GET',
-      href: '/manga',
-    },
-    postManga: {
-      method: 'POST',
-      href: '/manga',
+      href: '/search',
     },
   },
-  middleware(req, next) {
-    req.headers.append('X-Application-Key', 'ABC123');
-    return next(req);
-  },
-});
-
-const r1 = client.getMangas({
-  query: { title: 'One Piece', limit: '10' },
-});
-
-const r2 = client.postManga({
-  body: JSON.stringify({ title: 'One Piece', author: 'Oda Eiichiro' }),
-  contentType: 'application/json', // default
 });
 ```
 
-It sure seems verbose, but as your project grows, having all the calls well defined and organized will give you the full benefit of it.
+The `createFastClient` function generates an object that will have functions with the endpoints names. The parameters of this functions will vary depending on the method provided:
+
+```ts
+const res: Promise<Response> = client.search({
+  query: { q: 'teste', limit: '10' },
+});
+```
+
+### Parsers
+
+To automatically convert the return type, just pass a parser function to the endpoint definition:
+
+```ts
+type User = { id: string; name: string };
+
+const client = createFastClient({
+  base: 'https://api.example.com',
+  endpoints: {
+    getUsers: {
+      method: 'GET',
+      href: '/users',
+      parser: (res) => res.json() as Promise<User[]>,
+    },
+  },
+});
+```
+
+Now, when you call `getUsers`, the result will parsed and the return type will be of type `User[]`:
+
+```ts
+const res: Promise<User[]> = client.getUsers({
+  query: { name: 'matheus', limit: '10', order: 'asc' },
+});
+```
+
+### Middlewares
+
+Use a middleware to define a function to intercept the request and response of all endpoints:
+
+```ts
+const client = createFastClient({
+  base: 'https://api.example.com',
+  endpoints: { ... },
+  async middleware(req, next) {
+    // modify the request
+    req.headers.append('X-Application-Key', 'ABC123');
+
+    // call next to continue the pipeline
+    const res = await next(req);
+
+    // return the response
+    return res;
+  },
+});
+```
