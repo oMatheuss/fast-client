@@ -1,26 +1,20 @@
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
-interface EndpointInfo<M extends HttpMethod> {
-  readonly method: M;
+type ParserFunction<R> = (res: Response) => Promise<R>;
+
+interface EndpointInfo<M extends HttpMethod, R> {
+  method: M;
   href: string;
+  parser?: ParserFunction<R>;
 }
 
-type EndpointsWithoutTypes = {
-  [K: string]: EndpointInfo<HttpMethod>;
+type EndpointResponse<T> = T extends ParserFunction<infer R> ? R : Response;
+
+type Endpoints = {
+  [K: string]: EndpointInfo<HttpMethod, unknown>;
 };
 
-type Endpoints<T> = {
-  [K in keyof T]: T[K] extends EndpointInfo<infer M> ? EndpointInfo<M> : never;
-};
-
-type MethodParams = {
-  GET: { query: Record<string, string> };
-  POST: { body: any; contentType?: string };
-  PUT: { body: any; contentType?: string };
-  DELETE: { query: Record<string, string> };
-};
-
-interface Config<T extends EndpointsWithoutTypes> {
+interface Config<T extends Endpoints> {
   /***
    * the base URL of the API
    */
@@ -45,10 +39,17 @@ interface Config<T extends EndpointsWithoutTypes> {
   fetcher?: (request: Request) => Promise<Response>;
 }
 
-type FastClient<T> = {
+type MethodParams = {
+  GET: { query: Record<string, string> };
+  POST: { body: any; contentType?: string };
+  PUT: { body: any; contentType?: string };
+  DELETE: { query: Record<string, string> };
+};
+
+type FastClient<T extends Endpoints> = {
   [K in keyof T]: (
-    args?: MethodParams[Endpoints<T>[K]['method']]
-  ) => Promise<Response>;
+    args?: MethodParams[T[K]['method']]
+  ) => Promise<EndpointResponse<T[K]['parser']>>;
 };
 
 function ensureGetFetch(config: Config<any>) {
@@ -59,32 +60,32 @@ function ensureGetFetch(config: Config<any>) {
 }
 
 function isGetRequest(
-  info: EndpointInfo<HttpMethod>
-): info is EndpointInfo<'GET'> {
+  info: EndpointInfo<HttpMethod, unknown>
+): info is EndpointInfo<'GET', unknown> {
   return info.method === 'GET';
 }
 
 function isDeleteRequest(
-  info: EndpointInfo<HttpMethod>
-): info is EndpointInfo<'DELETE'> {
+  info: EndpointInfo<HttpMethod, unknown>
+): info is EndpointInfo<'DELETE', unknown> {
   return info.method === 'DELETE';
 }
 
 function isPostRequest(
-  info: EndpointInfo<HttpMethod>
-): info is EndpointInfo<'POST'> {
+  info: EndpointInfo<HttpMethod, unknown>
+): info is EndpointInfo<'POST', unknown> {
   return info.method === 'POST';
 }
 
 function isPutRequest(
-  info: EndpointInfo<HttpMethod>
-): info is EndpointInfo<'PUT'> {
+  info: EndpointInfo<HttpMethod, unknown>
+): info is EndpointInfo<'PUT', unknown> {
   return info.method === 'PUT';
 }
 
-function createFastClient<T extends EndpointsWithoutTypes>(config: Config<T>) {
+function createFastClient<T extends Endpoints>(config: Config<T>) {
   const _fetch = ensureGetFetch(config);
-  const endpoints = config.endpoints as unknown as Endpoints<T>;
+  const endpoints = config.endpoints;
 
   type CreatedFastClient = FastClient<typeof endpoints>;
 
@@ -96,7 +97,7 @@ function createFastClient<T extends EndpointsWithoutTypes>(config: Config<T>) {
 
     type FnArgs = MethodParams[(typeof info)['method']];
 
-    client[endpoint] = (args?: FnArgs) => {
+    client[endpoint] = async (args?: FnArgs) => {
       let request: Request;
 
       if (isGetRequest(info) || isDeleteRequest(info)) {
@@ -123,12 +124,23 @@ function createFastClient<T extends EndpointsWithoutTypes>(config: Config<T>) {
         throw new Error('Method not implemented');
       }
 
+      let response: Response;
+
       if (typeof config.middleware !== 'undefined') {
-        const _middleware = config.middleware;
-        return _middleware(request, _fetch);
+        response = await config.middleware(request, _fetch);
+      } else {
+        response = await _fetch(request);
       }
 
-      return _fetch(request);
+      let result;
+
+      if (typeof info.parser !== 'undefined') {
+        result = await info.parser(response);
+      } else {
+        result = response;
+      }
+
+      return result as EndpointResponse<(typeof info)['parser']>;
     };
   }
 
