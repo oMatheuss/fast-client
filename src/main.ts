@@ -40,15 +40,15 @@ interface Config<T extends Endpoints> {
 }
 
 type MethodParams = {
-  GET: { query: Record<string, string> };
+  GET?: { query: Record<string, string> };
   POST: { body: any; contentType?: string };
   PUT: { body: any; contentType?: string };
-  DELETE: { query: Record<string, string> };
+  DELETE?: { query: Record<string, string> };
 };
 
 type FastClient<T extends Endpoints> = {
   [K in keyof T]: (
-    args?: MethodParams[T[K]['method']]
+    args: MethodParams[T[K]['method']]
   ) => Promise<EndpointResponse<T[K]['parser']>>;
 };
 
@@ -95,15 +95,15 @@ function createFastClient<T extends Endpoints>(config: Config<T>) {
     const info = endpoints[endpoint];
     const url = new URL(info.href, config.base);
 
-    type FnArgs = MethodParams[(typeof info)['method']];
-
-    client[endpoint] = async (args?: FnArgs) => {
+    client[endpoint] = async (args: MethodParams[(typeof info)['method']]) => {
       let request: Request;
 
       if (isGetRequest(info) || isDeleteRequest(info)) {
-        const _args = args as MethodParams[typeof info.method];
-        for (const arg in _args.query) {
-          url.searchParams.append(arg, _args.query[arg]);
+        const _args = args as MethodParams[(typeof info)['method']];
+        if (_args) {
+          for (const arg in _args.query) {
+            url.searchParams.append(arg, _args.query[arg]);
+          }
         }
 
         request = new Request(url, { method: info.method });
