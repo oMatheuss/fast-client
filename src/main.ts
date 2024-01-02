@@ -93,9 +93,9 @@ function createFastClient<T extends Endpoints>(config: Config<T>) {
 
   for (const endpoint in endpoints) {
     const info = endpoints[endpoint];
-    const url = new URL(info.href, config.base);
 
     client[endpoint] = async (args: MethodParams[(typeof info)['method']]) => {
+      const url = new URL(info.href, config.base);
       let request: Request;
 
       if (isGetRequest(info) || isDeleteRequest(info)) {
