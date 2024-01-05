@@ -36,10 +36,10 @@ interface Config<T extends Endpoints> {
 }
 
 type MethodParams = {
-  GET?: { query: Record<string, string> };
+  GET: { query?: Record<string, string> };
   POST: { body: any; contentType?: string };
   PUT: { body: any; contentType?: string };
-  DELETE?: { query: Record<string, string> };
+  DELETE: { query?: Record<string, string> };
 };
 
 type RecursiveParamMatcher<T extends string> =
@@ -85,7 +85,8 @@ function createFastClient<T extends Endpoints>(config: Config<T>) {
 
     client[endpoint] = async (args) => {
       let href = info.href;
-      if ('path' in args) {
+
+      if (args && 'path' in args) {
         const path = args.path as Record<string, string>;
         for (const param in path) {
           href = href.replace(`{${param}}`, path[param]);
@@ -93,37 +94,31 @@ function createFastClient<T extends Endpoints>(config: Config<T>) {
       }
 
       const url = new URL(info.href, config.base);
-      let request: Request;
+      const headers = new Headers();
 
-      if (info.method === 'GET' || info.method === 'DELETE') {
-        const _args = args as MethodParams[typeof info.method];
-        if (_args) {
-          for (const arg in _args.query) {
-            url.searchParams.append(arg, _args.query[arg]);
+      if (args) {
+        if ('query' in args) {
+          for (const arg in args.query) {
+            url.searchParams.append(arg, args.query[arg]);
           }
         }
 
-        request = new Request(url, { method: info.method });
-      } else if (info.method === 'POST' || info.method === 'PUT') {
-        const _args = args as MethodParams[typeof info.method];
-
-        const headers = new Headers();
-        if (_args.contentType)
-          headers.append('Content-Type', _args.contentType);
-        else headers.append('Content-Type', 'application/json');
-
-        request = new Request(url, {
-          method: info.method,
-          body: _args.body,
-          headers,
-        });
-      } else {
-        throw new Error('Method not implemented');
+        if (info.method === 'POST' || info.method === 'PUT') {
+          if ('contentType' in args && args.contentType)
+            headers.append('Content-Type', args.contentType);
+          else headers.append('Content-Type', 'application/json');
+        }
       }
+
+      let request = new Request(url, {
+        method: info.method,
+        body: args && 'body' in args && args.body ? args.body : null,
+        headers,
+      });
 
       let response: Response;
 
-      if (typeof config.middleware !== 'undefined') {
+      if (config.middleware) {
         response = await config.middleware(request, _fetch);
       } else {
         response = await _fetch(request);
@@ -131,7 +126,7 @@ function createFastClient<T extends Endpoints>(config: Config<T>) {
 
       let result;
 
-      if (typeof info.parser !== 'undefined') {
+      if (info.parser) {
         result = await info.parser(response);
       } else {
         result = response;
