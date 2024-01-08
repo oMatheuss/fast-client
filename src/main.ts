@@ -2,15 +2,15 @@ type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
 type ParserFunction<R> = (res: Response) => Promise<R>;
 
-interface EndpointInfo {
+interface EndpointInfo<T extends string> {
   method: HttpMethod;
-  href: string;
+  href: T;
   parser?: ParserFunction<unknown>;
 }
 
-type Endpoints = { [K: string]: EndpointInfo };
+type Endpoints<T extends string> = { [K: string]: EndpointInfo<T> };
 
-interface Config<T extends Endpoints> {
+interface Config<T extends Endpoints<string>> {
   /***
    * the base URL of the API
    */
@@ -52,14 +52,18 @@ type RecursiveParamMatcher<T extends string> =
       : never;
 
 type PathParams<T> = T extends `/${infer Path}`
-  ? { path: { [K in RecursiveParamMatcher<Path>]: string } }
+  ? DropEmpty<{ path: { [K in RecursiveParamMatcher<Path>]: string } }>
   : { path?: Record<string, string> };
 
 type EndpointResponse<T> = T extends ParserFunction<infer R> ? R : Response;
 
+type DropEmpty<T> = {
+  [K in keyof T as keyof T[K] extends never ? never : K]: T[K];
+};
+
 type Identity<T> = T extends infer U ? { [K in keyof U]: U[K] } : never;
 
-type FastClient<T extends Endpoints> = {
+type FastClient<T extends Endpoints<string>> = {
   [K in keyof T]: (
     args: Identity<MethodParams[T[K]['method']] & PathParams<T[K]['href']>>
   ) => Promise<EndpointResponse<T[K]['parser']>>;
@@ -72,7 +76,9 @@ function ensureGetFetch(config: Config<any>) {
   else throw Error('ERROR: no fetcher available');
 }
 
-function createFastClient<T extends Endpoints>(config: Config<T>) {
+function createFastClient<U extends string, T extends Endpoints<U>>(
+  config: Config<T>
+) {
   const _fetch = ensureGetFetch(config);
   const endpoints = config.endpoints;
 
@@ -84,7 +90,7 @@ function createFastClient<T extends Endpoints>(config: Config<T>) {
     const info = endpoints[endpoint];
 
     client[endpoint] = async (args) => {
-      let href = info.href;
+      let href = info.href as string;
 
       if (args && 'path' in args) {
         const path = args.path as Record<string, string>;
@@ -93,7 +99,7 @@ function createFastClient<T extends Endpoints>(config: Config<T>) {
         }
       }
 
-      const url = new URL(info.href, config.base);
+      const url = new URL(href, config.base);
       const headers = new Headers();
 
       if (args) {
