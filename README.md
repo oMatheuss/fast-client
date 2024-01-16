@@ -5,7 +5,7 @@ The library behaves in a way that allows you to define all calls in one place, i
 
 ## How to use
 
-Let's assume you have an API with the endpoint `/api/manga`. Now you want to have a method that makes the call on this endpoint. All you need to do is:
+Let's assume you have an API with the endpoint `/search`. Now you want to have a method that makes the call on this endpoint. All you need to do is:
 
 ```ts
 const client = createFastClient({
@@ -25,6 +25,27 @@ The `createFastClient` function generates an object that will have functions wit
 const res: Promise<Response> = client.search({
   query: { q: 'teste', limit: '10' },
 });
+```
+
+You can also define path params using `{}` in the href:
+
+```ts
+const client = createFastClient({
+  base: 'https://api.example.com',
+  endpoints: {
+    getUser: {
+      method: 'GET',
+      href: '/user/{id}',
+    },
+  },
+});
+```
+
+This will allow you to pass the id parameter in the request:
+
+```ts
+client.getUser({ path: { id: '123' } });
+// 'path' with property 'id' is required here
 ```
 
 ### Parsers
