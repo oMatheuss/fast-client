@@ -76,73 +76,137 @@ function ensureGetFetch(config: Config<any>) {
   else throw Error('ERROR: no fetcher available');
 }
 
-function createFastClient<U extends string, T extends Endpoints<U>>(
-  config: Config<T>
-) {
-  const _fetch = ensureGetFetch(config);
-  const endpoints = config.endpoints;
+type FastClientEvent = 'request' | 'response';
+type Unsubscribe = () => void;
+type EventHandler = {
+  request: (request: Request) => Request | Promise<Request>;
+  response: (response: Response) => Response | Promise<Response>;
+};
 
-  type CreatedFastClient = FastClient<typeof endpoints>;
+interface IGlobalFastClient {
+  create<U extends string, T extends Endpoints<U>>(
+    config: Config<T>
+  ): FastClient<T>;
+  on<T extends FastClientEvent>(
+    eventType: T,
+    handler: EventHandler[T]
+  ): Unsubscribe;
+}
 
-  const client: Partial<CreatedFastClient> = {};
+type Handlers =
+  | {
+      eventType: 'request';
+      handler: EventHandler['request'];
+    }
+  | {
+      eventType: 'response';
+      handler: EventHandler['response'];
+    };
 
-  for (const endpoint in endpoints) {
-    const info = endpoints[endpoint];
+class GlobalFastClient implements IGlobalFastClient {
+  private handlers: Array<Handlers>;
+  constructor() {
+    this.handlers = [];
+  }
+  create<U extends string, T extends Endpoints<U>>(
+    config: Config<T>
+  ): FastClient<T> {
+    const _fetch = ensureGetFetch(config);
+    const endpoints = config.endpoints;
 
-    client[endpoint] = async (args) => {
-      let href = info.href as string;
+    type CreatedFastClient = FastClient<typeof endpoints>;
 
-      if (args && 'path' in args) {
-        const path = args.path as Record<string, string>;
-        for (const param in path) {
-          href = href.replace(`{${param}}`, path[param]);
-        }
-      }
+    const client: Partial<CreatedFastClient> = {};
 
-      const url = new URL(href, config.base);
-      const headers = new Headers();
+    for (const endpoint in endpoints) {
+      const info = endpoints[endpoint];
 
-      if (args) {
-        if ('query' in args) {
-          for (const arg in args.query) {
-            url.searchParams.append(arg, args.query[arg]);
+      client[endpoint] = async (args) => {
+        let href = info.href as string;
+
+        if (args && 'path' in args) {
+          const path = args.path as Record<string, string>;
+          for (const param in path) {
+            href = href.replace(`{${param}}`, path[param]);
           }
         }
 
-        if (info.method === 'POST' || info.method === 'PUT') {
-          if ('contentType' in args && args.contentType)
-            headers.append('Content-Type', args.contentType);
-          else headers.append('Content-Type', 'application/json');
+        const url = new URL(href, config.base);
+        const headers = new Headers();
+
+        if (args) {
+          if ('query' in args) {
+            for (const arg in args.query) {
+              url.searchParams.append(arg, args.query[arg]);
+            }
+          }
+
+          if (info.method === 'POST' || info.method === 'PUT') {
+            if ('contentType' in args && args.contentType)
+              headers.append('Content-Type', args.contentType);
+            else headers.append('Content-Type', 'application/json');
+          }
         }
-      }
 
-      let request = new Request(url, {
-        method: info.method,
-        body: args && 'body' in args && args.body ? args.body : null,
-        headers,
-      });
+        let request = new Request(url, {
+          method: info.method,
+          body: args && 'body' in args && args.body ? args.body : null,
+          headers,
+        });
 
-      let response: Response;
+        for (const handler of this.handlers) {
+          if (handler.eventType === 'request') {
+            request = await handler.handler(request);
+          }
+        }
 
-      if (config.middleware) {
-        response = await config.middleware(request, _fetch);
-      } else {
-        response = await _fetch(request);
-      }
+        let response: Response;
 
-      let result;
+        if (config.middleware) {
+          response = await config.middleware(request, _fetch);
+        } else {
+          response = await _fetch(request);
+        }
 
-      if (info.parser) {
-        result = await info.parser(response);
-      } else {
-        result = response;
-      }
+        for (const handler of this.handlers) {
+          if (handler.eventType === 'response') {
+            response = await handler.handler(response);
+          }
+        }
 
-      return result as EndpointResponse<(typeof info)['parser']>;
+        let result;
+
+        if (info.parser) {
+          result = await info.parser(response);
+        } else {
+          result = response;
+        }
+
+        return result as EndpointResponse<(typeof info)['parser']>;
+      };
+    }
+
+    return client as CreatedFastClient;
+  }
+  on<T extends FastClientEvent>(
+    eventType: T,
+    handler: EventHandler[T]
+  ): Unsubscribe {
+    // TODO: fix types
+    this.handlers.push({ eventType, handler } as any);
+
+    return () => {
+      this.handlers = this.handlers.filter((x) => x.handler !== handler);
     };
   }
-
-  return client as CreatedFastClient;
 }
 
-export { createFastClient };
+const fastClient = new GlobalFastClient();
+
+function createFastClient<U extends string, T extends Endpoints<U>>(
+  config: Config<T>
+) {
+  return fastClient.create(config);
+}
+
+export { createFastClient, fastClient, GlobalFastClient };
