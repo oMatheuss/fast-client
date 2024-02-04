@@ -1,0 +1,9 @@
+{
+  "main": "index.js",
+  "scripts": {
+    "start": "tsc index.ts --esModuleInterop && node index.js"
+  },
+  "dependencies": {
+    "fast-client": "0.3.0"
+  }
+}
