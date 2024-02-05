@@ -118,6 +118,24 @@ class GlobalFastClient implements IGlobalFastClient {
 
     const client: Partial<CreatedFastClient> = {};
 
+    const nextFn = async (request: Request) => {
+      for (const handler of this.handlers) {
+        if (handler.eventType === 'request') {
+          request = await handler.handler(request);
+        }
+      }
+
+      let response = await _fetch(request);
+
+      for (const handler of this.handlers) {
+        if (handler.eventType === 'response') {
+          response = await handler.handler(response);
+        }
+      }
+
+      return response;
+    };
+
     for (const endpoint in endpoints) {
       const info = endpoints[endpoint];
 
@@ -154,24 +172,12 @@ class GlobalFastClient implements IGlobalFastClient {
           headers,
         });
 
-        for (const handler of this.handlers) {
-          if (handler.eventType === 'request') {
-            request = await handler.handler(request);
-          }
-        }
-
         let response: Response;
 
         if (config.middleware) {
-          response = await config.middleware(request, _fetch);
+          response = await config.middleware(request, nextFn);
         } else {
-          response = await _fetch(request);
-        }
-
-        for (const handler of this.handlers) {
-          if (handler.eventType === 'response') {
-            response = await handler.handler(response);
-          }
+          response = await nextFn(request);
         }
 
         let result;
