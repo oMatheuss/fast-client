@@ -1,6 +1,6 @@
 {
   "name": "fast-client",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Quickly create a client for an api",
   "main": "output/index.cjs.js",
   "module": "output/index.esm.js",
