@@ -161,7 +161,11 @@ class GlobalFastClient implements IGlobalFastClient {
             }
           }
 
-          if (info.method === 'POST' || info.method === 'PUT') {
+          if (
+            info.method === 'POST' ||
+            info.method === 'PUT' ||
+            info.method === 'PATCH'
+          ) {
             if ('contentType' in args && args.contentType)
               headers.append('Content-Type', args.contentType);
             else headers.append('Content-Type', 'application/json');
