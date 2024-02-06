@@ -1,4 +1,4 @@
-type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
+type HttpMethod = 'GET' | 'HEAD' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
 
 type ParserFunction<R> = (res: Response) => Promise<R>;
 
@@ -37,9 +37,11 @@ interface Config<T extends Endpoints<string>> {
 
 type MethodParams = {
   GET: { query?: Record<string, string> };
+  HEAD: { query?: Record<string, string> };
   POST: { body: any; contentType?: string };
   PUT: { body: any; contentType?: string };
   DELETE: { query?: Record<string, string> };
+  PATCH: { body: any; contentType?: string };
 };
 
 type RecursiveParamMatcher<T extends string> =
