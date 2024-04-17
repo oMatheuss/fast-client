@@ -53,7 +53,7 @@ type RecursiveParamMatcher<T extends string> =
       ? Param
       : never;
 
-type PathParams<T> = T extends `/${infer Path}`
+type PathParams<T> = T extends `${infer Path}`
   ? DropEmpty<{ path: { [K in RecursiveParamMatcher<Path>]: string } }>
   : { path?: Record<string, string> };
 
