@@ -3,46 +3,49 @@ type HttpMethod = 'GET' | 'HEAD' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
 type ParserFunction<R> = (res: Response) => Promise<R>;
 
 interface EndpointInfo<T extends string> {
+  /**
+   * The request method.
+   */
   method: HttpMethod;
+
+  /**
+   * The HREF relative path from base.
+   */
   href: T;
+
+  /**
+   * For automatic parsing the response. \
+   * The return type will be inferred from this function if any.
+   */
   parser?: ParserFunction<unknown>;
 }
 
-type Endpoints<T extends string> = { [K: string]: EndpointInfo<T> };
-
-interface Config<T extends Endpoints<string>> {
-  /***
-   * the base URL of the API
+interface Config {
+  /**
+   * The base URL of the API to consume.
    */
   base: string;
 
-  /***
-   * endpoints to be called later
-   */
-  endpoints: T;
-
-  /***
-   * middleware serves as a request and response interceptor
+  /**
+   *
+   * The middleware serves as a request and response interceptor.
    */
   middleware?: (
     req: Request,
     next: (req: Request) => Promise<Response>
   ) => Promise<Response>;
 
-  /***
-   * the handler that will make the http requests
+  /**
+   * The handler that will make the http requests.
    */
   fetcher?: (request: Request) => Promise<Response>;
 }
 
-type MethodParams = {
-  GET: { query?: Record<string, string> };
-  HEAD: { query?: Record<string, string> };
-  POST: { body: any; contentType?: string };
-  PUT: { body: any; contentType?: string };
-  DELETE: { query?: Record<string, string> };
-  PATCH: { body: any; contentType?: string };
-};
+type QueryParamType = string | number | boolean;
+
+interface RequestParams extends Omit<RequestInit, 'method'> {
+  query?: Record<string, QueryParamType>;
+}
 
 type RecursiveParamMatcher<T extends string> =
   T extends `${infer Token}/${infer Rest}`
@@ -53,9 +56,11 @@ type RecursiveParamMatcher<T extends string> =
       ? Param
       : never;
 
+type PathParamType = string | number | boolean;
+
 type PathParams<T> = T extends `${infer Path}`
-  ? DropEmpty<{ path: { [K in RecursiveParamMatcher<Path>]: string } }>
-  : { path?: Record<string, string> };
+  ? DropEmpty<{ path: { [K in RecursiveParamMatcher<Path>]: PathParamType } }>
+  : { path?: Record<string, PathParamType> };
 
 type EndpointResponse<T> = T extends ParserFunction<infer R> ? R : Response;
 
@@ -65,160 +70,124 @@ type DropEmpty<T> = {
 
 type Identity<T> = T extends infer U ? { [K in keyof U]: U[K] } : never;
 
-type FastClient<T extends Endpoints<string>> = {
-  [K in keyof T]: (
-    args: Identity<MethodParams[T[K]['method']] & PathParams<T[K]['href']>>
-  ) => Promise<EndpointResponse<T[K]['parser']>>;
-};
-
-function ensureGetFetch(config: Config<any>) {
-  if (config.fetcher) return config.fetcher;
-  else if (typeof fetch !== 'undefined') return fetch;
-  else if (typeof window !== 'undefined') return window.fetch;
+function ensureGetFetch(config: Config) {
+  if (config.fetcher) return config.fetcher; // httpclient from config
+  else if (typeof fetch !== 'undefined') return fetch; // httpclient from node
+  else if (typeof window !== 'undefined')
+    return window.fetch; // httpclient from browser
   else throw Error('ERROR: no fetcher available');
 }
 
 type FastClientEvent = 'request' | 'response';
-type Unsubscribe = () => void;
-type EventHandler = {
+type EventHandlerFn = {
   request: (request: Request) => Request | Promise<Request>;
   response: (response: Response) => Response | Promise<Response>;
 };
 
-interface IGlobalFastClient {
-  create<U extends string, T extends Endpoints<U>>(
-    config: Config<T>
-  ): FastClient<T>;
-  on<T extends FastClientEvent>(
-    eventType: T,
-    handler: EventHandler[T]
-  ): Unsubscribe;
-}
-
 type Handlers =
   | {
       eventType: 'request';
-      handler: EventHandler['request'];
+      handler: EventHandlerFn['request'];
     }
   | {
       eventType: 'response';
-      handler: EventHandler['response'];
+      handler: EventHandlerFn['response'];
     };
 
-class GlobalFastClient implements IGlobalFastClient {
-  private handlers: Array<Handlers>;
-  constructor() {
-    this.handlers = [];
-  }
-  create<U extends string, T extends Endpoints<U>>(
-    config: Config<T>
-  ): FastClient<T> {
-    const _fetch = ensureGetFetch(config);
-    const endpoints = config.endpoints;
-
-    type CreatedFastClient = FastClient<typeof endpoints>;
-
-    const client: Partial<CreatedFastClient> = {};
-
-    const nextFn = async (request: Request) => {
-      for (const handler of this.handlers) {
-        if (handler.eventType === 'request') {
-          request = await handler.handler(request);
-        }
-      }
-
-      let response = await _fetch(request);
-
-      for (const handler of this.handlers) {
-        if (handler.eventType === 'response') {
-          response = await handler.handler(response);
-        }
-      }
-
-      return response;
-    };
-
-    for (const endpoint in endpoints) {
-      const info = endpoints[endpoint];
-
-      client[endpoint] = async (args) => {
-        let href = info.href as string;
-
-        if (args && 'path' in args) {
-          const path = args.path as Record<string, string>;
-          for (const param in path) {
-            href = href.replace(`{${param}}`, path[param]);
-          }
-        }
-
-        const url = new URL(href, config.base);
-        const headers = new Headers();
-
-        if (args) {
-          if ('query' in args) {
-            for (const arg in args.query) {
-              url.searchParams.append(arg, args.query[arg]);
-            }
-          }
-
-          if (
-            info.method === 'POST' ||
-            info.method === 'PUT' ||
-            info.method === 'PATCH'
-          ) {
-            if ('contentType' in args && args.contentType)
-              headers.append('Content-Type', args.contentType);
-            else headers.append('Content-Type', 'application/json');
-          }
-        }
-
-        let request = new Request(url, {
-          method: info.method,
-          body: args && 'body' in args && args.body ? args.body : null,
-          headers,
-        });
-
-        let response: Response;
-
-        if (config.middleware) {
-          response = await config.middleware(request, nextFn);
-        } else {
-          response = await nextFn(request);
-        }
-
-        let result;
-
-        if (info.parser) {
-          result = await info.parser(response);
-        } else {
-          result = response;
-        }
-
-        return result as EndpointResponse<(typeof info)['parser']>;
-      };
-    }
-
-    return client as CreatedFastClient;
-  }
+interface FastClient {
+  <U extends string, T extends EndpointInfo<U>>(
+    info: T
+  ): (
+    args: Identity<RequestParams & PathParams<T['href']>>
+  ) => Promise<EndpointResponse<T['parser']>>;
   on<T extends FastClientEvent>(
     eventType: T,
-    handler: EventHandler[T]
-  ): Unsubscribe {
-    // TODO: fix types
-    this.handlers.push({ eventType, handler } as any);
+    handler: EventHandlerFn[T]
+  ): () => void;
+}
 
-    return () => {
-      this.handlers = this.handlers.filter((x) => x.handler !== handler);
-    };
+export function createFastClient(config: Config): FastClient {
+  const _fetch = ensureGetFetch(config);
+  let _handlers: Handlers[] = [];
+
+  async function nextFn(request: Request) {
+    for (const { eventType, handler } of _handlers) {
+      if (eventType === 'request') request = await handler(request);
+    }
+
+    let response = await _fetch(request);
+
+    for (const { eventType, handler } of _handlers) {
+      if (eventType === 'response') response = await handler(response);
+    }
+
+    return response;
   }
+
+  const fastClient = function <U extends string, T extends EndpointInfo<U>>(
+    info: T
+  ) {
+    type ThisEndpoint = typeof info;
+
+    return async function (
+      args: Identity<RequestParams & PathParams<ThisEndpoint['href']>>
+    ) {
+      const { path, query, headers: headersInit, ...requestInit } = args;
+
+      let href = info.href as string;
+      if (path) {
+        const path = args.path!;
+        for (const param in path) {
+          href = href.replace(`{${param}}`, path[param].toString());
+        }
+      }
+
+      const url = new URL(href, config.base);
+      const headers = new Headers(headersInit);
+
+      if (args) {
+        if (query) {
+          for (const [key, value] of Object.entries(query)) {
+            if (value) url.searchParams.append(key, value.toString());
+          }
+        }
+
+        if (
+          info.method === 'POST' ||
+          info.method === 'PUT' ||
+          info.method === 'PATCH'
+        ) {
+          if (headers.get('Content-Type') === null)
+            headers.append('Content-Type', 'application/json');
+        }
+      }
+
+      const request = new Request(url, {
+        method: info.method,
+        headers,
+        ...requestInit,
+      });
+
+      const response = config.middleware
+        ? await config.middleware(request, nextFn)
+        : await nextFn(request);
+
+      const result = info.parser ? info.parser(response) : response;
+
+      return result as EndpointResponse<(typeof info)['parser']>;
+    };
+  };
+
+  fastClient.on = function <T extends FastClientEvent>(
+    eventType: T,
+    handler: EventHandlerFn[T]
+  ) {
+    _handlers.push({ eventType, handler } as Handlers);
+
+    return function () {
+      _handlers = _handlers.filter((x) => x.handler !== handler);
+    };
+  };
+
+  return fastClient;
 }
-
-const fastClient = new GlobalFastClient();
-
-function createFastClient<U extends string, T extends Endpoints<U>>(
-  config: Config<T>
-) {
-  return fastClient.create(config);
-}
-
-export { createFastClient, fastClient, GlobalFastClient };
