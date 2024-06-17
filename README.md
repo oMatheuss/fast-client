@@ -5,47 +5,43 @@ The library behaves in a way that allows you to define all calls in one place, i
 
 ## How to use
 
-Let's assume you have an API with the endpoint `/search`. Now you want to have a method that makes the call on this endpoint. All you need to do is:
+Let's assume you have an API with the endpoint `/search`. First, create an instance of the FastClient:
 
 ```ts
 const client = createFastClient({
   base: 'https://api.example.com',
-  endpoints: {
-    search: {
-      method: 'GET',
-      href: '/search',
-    },
-  },
 });
 ```
 
-The `createFastClient` function generates an object that will have functions with the endpoints names. The parameters of this functions will vary depending on the method provided:
+Now you can define function your endpoints using the `client` function, and then call it:
 
 ```ts
-const res: Promise<Response> = client.search({
-  query: { q: 'teste', limit: '10' },
+const search = client(search: {
+  method: 'GET',
+  href: '/search',
+});
+
+// res: Promise<Response>
+const res = search({
+  query: { q: 'teste', limit: 10 },
 });
 ```
 
 You can also define path params using `{}` in the href:
 
 ```ts
-const client = createFastClient({
-  base: 'https://api.example.com',
-  endpoints: {
-    getUser: {
-      method: 'GET',
-      href: '/user/{id}',
-    },
-  },
+const getUser = client({
+  method: 'GET',
+  href: '/user/{id}',
 });
 ```
 
 This will allow you to pass the id parameter in the request:
 
 ```ts
-client.getUser({ path: { id: '123' } });
+// res: Promise<Response>
 // 'path' with property 'id' is required here
+const res = getUser({ path: { id: 123 } });
 ```
 
 ### Parsers
@@ -55,23 +51,33 @@ To automatically convert the return type, just pass a parser function to the end
 ```ts
 type User = { id: string; name: string };
 
-const client = createFastClient({
-  base: 'https://api.example.com',
-  endpoints: {
-    getUsers: {
-      method: 'GET',
-      href: '/users',
-      parser: (res) => res.json() as Promise<User[]>,
-    },
-  },
+const getUser = client({
+  method: 'GET',
+  href: '/user/{id}',
+  parser: (res) => res.json() as Promise<User>,
 });
 ```
 
-Now, when you call `getUsers`, the result will parsed and the return type will be of type `User[]`:
+For simplicity you can create a custom helper to parse json responses with types:
 
 ```ts
-const res: Promise<User[]> = client.getUsers({
-  query: { name: 'matheus', limit: '10', order: 'asc' },
+const asJson = <T>(res: Response) => res.json() as Promise<T>;
+
+type User = { id: string; name: string };
+
+const getUser = client({
+  method: 'GET',
+  href: '/users/{id}',
+  parser: asJson<User>, // much better now
+});
+```
+
+Now, when you call `getUser`, the result will parsed and the return type will be of type `Promise<User>`:
+
+```ts
+// res will be of type Promise<User>
+const res = getUsers({
+  query: { name: 'matheus', limit: 10, order: 'asc' },
 });
 ```
 
@@ -82,16 +88,32 @@ Use a middleware to define a function to intercept the request and response of a
 ```ts
 const client = createFastClient({
   base: 'https://api.example.com',
-  endpoints: { ... },
   async middleware(req, next) {
-    // modify the request
+    // here you can modify the request
     req.headers.append('X-Application-Key', 'ABC123');
 
     // call next to continue the pipeline
     const res = await next(req);
+
+    // here you can modify the response
 
     // return the response
     return res;
   },
 });
 ```
+
+This pattern can help you add `Authorization` header for each request.
+
+### Interceptors
+
+You can also intercept requests and responses on any endpoint you want:
+
+```ts
+const unsubscribe = client.on('response', (res) => {
+  if (res.status === 401) navigate('/login');
+  return res;
+});
+```
+
+The function return a `unsubscribe` function for removing the event and stop it from being called. This pattern, for example, is super handy when used inside a `useEffect` in react.
