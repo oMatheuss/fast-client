@@ -62,8 +62,6 @@ type PathParams<T> = T extends `${infer Path}`
   ? DropEmpty<{ path: { [K in RecursiveParamMatcher<Path>]: PathParamType } }>
   : { path?: Record<string, PathParamType> };
 
-type EndpointResponse<T> = T extends ParserFunction<infer R> ? R : Response;
-
 type DropEmpty<T> = {
   [K in keyof T as keyof T[K] extends never ? never : K]: T[K];
 };
@@ -94,12 +92,14 @@ type Handlers =
       handler: EventHandlerFn['response'];
     };
 
+type EndpointArgs<T extends string> = Identity<RequestParams & PathParams<T>>;
+type EndpointResponse<T> = T extends ParserFunction<infer R> ? R : Response;
+type EndpointFn<T extends EndpointInfo<string>> = (
+  args: EndpointArgs<T['href']>
+) => Promise<EndpointResponse<T['parser']>>;
+
 interface FastClient {
-  <U extends string, T extends EndpointInfo<U>>(
-    info: T
-  ): (
-    args: Identity<RequestParams & PathParams<T['href']>>
-  ) => Promise<EndpointResponse<T['parser']>>;
+  <U extends string, T extends EndpointInfo<U>>(info: T): EndpointFn<T>;
   on<T extends FastClientEvent>(
     eventType: T,
     handler: EventHandlerFn[T]
@@ -129,9 +129,7 @@ export function createFastClient(config: Config): FastClient {
   ) {
     type ThisEndpoint = typeof info;
 
-    return async function (
-      args: Identity<RequestParams & PathParams<ThisEndpoint['href']>>
-    ) {
+    return async function (args: EndpointArgs<ThisEndpoint['href']>) {
       const { path, query, headers: headersInit, ...requestInit } = args;
 
       let href = info.href as string;
@@ -174,7 +172,9 @@ export function createFastClient(config: Config): FastClient {
 
       const result = info.parser ? info.parser(response) : response;
 
-      return result as EndpointResponse<(typeof info)['parser']>;
+      // This cast is needed because parser is not generic
+      // I think it only affects this place so I'll ignore it for now
+      return result as EndpointResponse<ThisEndpoint['parser']>;
     };
   };
 
