@@ -78,6 +78,10 @@ function ensureGetFetch(config: Config) {
   else throw Error('ERROR: no fetcher available');
 }
 
+type FetcherFn<U extends string, T extends EndpointInfo<U>> = (
+  args: Identity<RequestParams & PathParams<T['href']>>
+) => Promise<EndpointResponse<T['parser']>>;
+
 type FastClientEvent = 'request' | 'response';
 type EventHandlerFn = {
   request: (request: Request) => Request | Promise<Request>;
@@ -94,16 +98,31 @@ type Handlers =
       handler: EventHandlerFn['response'];
     };
 
+type EndpointInfoRecord<T extends string> = Record<string, EndpointInfo<T>>;
+type FetchersFns<U extends string, T extends EndpointInfoRecord<U>> = {
+  [K in keyof T]: FetcherFn<U, T[K]>;
+};
+
 interface FastClient {
-  <U extends string, T extends EndpointInfo<U>>(
-    info: T
-  ): (
-    args: Identity<RequestParams & PathParams<T['href']>>
-  ) => Promise<EndpointResponse<T['parser']>>;
+  /**
+   * Create an endpoint binded to this FastClient instance.
+   */
+  <U extends string, T extends EndpointInfo<U>>(info: T): FetcherFn<U, T>;
+
+  /**
+   * Bind an event to this FastClient instance.
+   */
   on<T extends FastClientEvent>(
     eventType: T,
     handler: EventHandlerFn[T]
   ): () => void;
+
+  /**
+   * Create many endpoints binded to this FastClient instance.
+   */
+  many<U extends string, T extends EndpointInfoRecord<U>>(
+    endpoints: T
+  ): FetchersFns<U, T>;
 }
 
 export function createFastClient(config: Config): FastClient {
@@ -124,19 +143,14 @@ export function createFastClient(config: Config): FastClient {
     return response;
   }
 
-  const fastClient = function <U extends string, T extends EndpointInfo<U>>(
-    info: T
-  ) {
-    type ThisEndpoint = typeof info;
-
+  const fastClient = function <T extends EndpointInfo<string>>(info: T) {
     return async function (
-      args: Identity<RequestParams & PathParams<ThisEndpoint['href']>>
+      args: Identity<RequestParams & PathParams<T['href']>>
     ) {
       const { path, query, headers: headersInit, ...requestInit } = args;
 
       let href = info.href as string;
       if (path) {
-        const path = args.path!;
         for (const param in path) {
           href = href.replace(`{${param}}`, path[param].toString());
         }
@@ -187,6 +201,18 @@ export function createFastClient(config: Config): FastClient {
     return function () {
       _handlers = _handlers.filter((x) => x.handler !== handler);
     };
+  };
+
+  fastClient.many = function <
+    U extends string,
+    T extends EndpointInfoRecord<U>,
+  >(endpoints: T) {
+    const entries = Object.entries(endpoints);
+    const outputs = [];
+    for (const [key, value] of entries) {
+      outputs.push([key, fastClient(value)] as const);
+    }
+    return Object.fromEntries(outputs) as FetchersFns<U, T>;
   };
 
   return fastClient;

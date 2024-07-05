@@ -11,15 +11,19 @@ const api = createFastClient({
   fetcher,
 });
 
-const search = api({
-  method: 'GET',
-  href: '/',
+const _api = api.many({
+  search: {
+    method: 'GET',
+    href: '/',
+  },
+  get: {
+    method: 'GET',
+    href: '/{id}',
+  },
 });
 
-const get = api({
-  method: 'GET',
-  href: '/{id}',
-});
+const search = _api.search;
+const get = _api.get;
 
 test('fetch function to be called', async () => {
   await search({ query: { q: '123' } });
