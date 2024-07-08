@@ -62,8 +62,6 @@ type PathParams<T> = T extends `${infer Path}`
   ? DropEmpty<{ path: { [K in RecursiveParamMatcher<Path>]: PathParamType } }>
   : { path?: Record<string, PathParamType> };
 
-type EndpointResponse<T> = T extends ParserFunction<infer R> ? R : Response;
-
 type DropEmpty<T> = {
   [K in keyof T as keyof T[K] extends never ? never : K]: T[K];
 };
@@ -102,6 +100,8 @@ type EndpointInfoRecord<T extends string> = Record<string, EndpointInfo<T>>;
 type FetchersFns<U extends string, T extends EndpointInfoRecord<U>> = {
   [K in keyof T]: FetcherFn<U, T[K]>;
 };
+
+type EndpointResponse<T> = T extends ParserFunction<infer R> ? R : Response;
 
 interface FastClient {
   /**
@@ -188,7 +188,7 @@ export function createFastClient(config: Config): FastClient {
 
       const result = info.parser ? info.parser(response) : response;
 
-      return result as EndpointResponse<(typeof info)['parser']>;
+      return result as EndpointResponse<T['parser']>;
     };
   };
 
